@@ -197,6 +197,17 @@
             padding: 4px 6px;
             border-radius: 6px;
         }
+        .n8n-chat-widget .chat-message.bot .message-text ul,
+        .n8n-chat-widget .chat-message.bot .message-text ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        .n8n-chat-widget .chat-message.bot .message-text li {
+            margin: 4px 0;
+        }
+        .n8n-chat-widget .chat-message.bot .message-text p {
+            margin: 8px 0 0 0;
+        }
 
         .n8n-chat-widget .chat-input {
             padding: 16px;
@@ -425,18 +436,97 @@
     }
 
     function linkifyAndExtractLinks(plainText) {
-        const escaped = escapeHTML(plainText);
-        const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
         const links = [];
-        const htmlWithLinks = escaped.replace(urlRegex, (match) => {
-            let href = match;
-            if (href.startsWith('www.')) {
-                href = `https://${href}`;
+        const sanitizeUrl = (raw) => {
+            if (!raw) return null;
+            let href = raw.trim();
+            if (href.startsWith('www.')) href = `https://${href}`;
+            if (!/^https?:\/\//i.test(href)) return null; // block non-http(s)
+            return href;
+        };
+
+        const processInline = (text) => {
+            // escape first
+            let out = escapeHTML(text);
+
+            // markdown links [text](url)
+            const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|www\.[^\s)]+)\)/gi;
+            out = out.replace(mdLink, (_, label, url) => {
+                const safeUrl = sanitizeUrl(url);
+                if (!safeUrl) return _;
+                links.push(safeUrl);
+                return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${escapeHTML(label)}</a>`;
+            });
+
+            // replace bare URLs outside existing anchors
+            const splitByAnchors = out.split(/(<a [^>]+>.*?<\/a>)/gi);
+            const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+            for (let i = 0; i < splitByAnchors.length; i += 2) { // non-anchor segments at even indexes
+                if (splitByAnchors[i] === undefined) continue;
+                splitByAnchors[i] = splitByAnchors[i].replace(urlRegex, (match) => {
+                    const safeUrl = sanitizeUrl(match);
+                    if (!safeUrl) return match;
+                    links.push(safeUrl);
+                    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+                });
             }
-            links.push(href);
-            return `<a href="${href}" target="_blank" rel="noopener noreferrer">${match}</a>`;
-        }).replace(/\n/g, '<br>');
-        return { html: htmlWithLinks, links };
+            out = splitByAnchors.join('');
+            return out;
+        };
+
+        // Build simple paragraphs and lists from markdown-like text
+        const lines = (plainText || '').replace(/\r\n/g, '\n').split('\n');
+        let htmlParts = [];
+        let listType = null; // 'ul' | 'ol' | null
+        let paragraphBuffer = [];
+
+        const flushParagraph = () => {
+            if (paragraphBuffer.length) {
+                const paragraph = processInline(paragraphBuffer.join(' '));
+                htmlParts.push(`<p>${paragraph}</p>`);
+                paragraphBuffer = [];
+            }
+        };
+        const openList = (type) => {
+            if (listType !== type) {
+                if (listType) htmlParts.push(listType === 'ul' ? '</ul>' : '</ol>');
+                flushParagraph();
+                listType = type;
+                htmlParts.push(type === 'ul' ? '<ul>' : '<ol>');
+            }
+        };
+        const closeList = () => {
+            if (listType) {
+                htmlParts.push(listType === 'ul' ? '</ul>' : '</ol>');
+                listType = null;
+            }
+        };
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) { // blank line
+                closeList();
+                flushParagraph();
+                continue;
+            }
+
+            const ulMatch = /^[-*]\s+(.+)$/.exec(line);
+            const olMatch = /^(\d+)\.\s+(.+)$/.exec(line);
+            if (ulMatch) {
+                openList('ul');
+                htmlParts.push(`<li>${processInline(ulMatch[1])}</li>`);
+            } else if (olMatch) {
+                openList('ol');
+                htmlParts.push(`<li>${processInline(olMatch[2])}</li>`);
+            } else {
+                closeList();
+                paragraphBuffer.push(line);
+            }
+        }
+        closeList();
+        flushParagraph();
+
+        return { html: htmlParts.join(''), links };
     }
 
     function appendBotMessage(messageText) {
