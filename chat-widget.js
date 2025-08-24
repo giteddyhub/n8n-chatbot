@@ -405,7 +405,7 @@
         chatInterface.classList.add('active');
 
         // Show initial greeting if configured
-        if (config.branding.initialGreeting) {
+        if (config.branding.initialGreeting && config.branding.initialGreeting.trim()) {
             const greetingDiv = document.createElement('div');
             greetingDiv.className = 'chat-message bot';
             greetingDiv.textContent = config.branding.initialGreeting;
@@ -434,8 +434,8 @@
             const responseData = await response.json();
             
             // Only show webhook response if it's different from greeting or if no greeting is set
-            const webhookMessage = Array.isArray(responseData) ? responseData[0].output : responseData.output;
-            if (!config.branding.initialGreeting || webhookMessage !== config.branding.initialGreeting) {
+            const webhookMessage = Array.isArray(responseData) ? responseData[0]?.output : responseData?.output;
+            if (webhookMessage && webhookMessage.trim() && (!config.branding.initialGreeting || webhookMessage !== config.branding.initialGreeting)) {
                 const botMessageDiv = document.createElement('div');
                 botMessageDiv.className = 'chat-message bot';
                 botMessageDiv.textContent = webhookMessage;
@@ -483,11 +483,14 @@
             
             const data = await response.json();
             
-            const botMessageDiv = document.createElement('div');
-            botMessageDiv.className = 'chat-message bot';
-            botMessageDiv.textContent = Array.isArray(data) ? data[0].output : data.output;
-            messagesContainer.appendChild(botMessageDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            const botMessage = Array.isArray(data) ? data[0]?.output : data?.output;
+            if (botMessage && botMessage.trim()) {
+                const botMessageDiv = document.createElement('div');
+                botMessageDiv.className = 'chat-message bot';
+                botMessageDiv.textContent = botMessage;
+                messagesContainer.appendChild(botMessageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
         } catch (error) {
             console.error('Error:', error);
         }
