@@ -295,6 +295,7 @@
             name: '',
             welcomeText: '',
             responseTimeText: '',
+            initialGreeting: '',
             poweredBy: {
                 text: '',
                 link: ''
@@ -397,6 +398,21 @@
 
     async function startNewConversation() {
         currentSessionId = generateUUID();
+        
+        // Show chat interface first
+        chatContainer.querySelector('.brand-header').style.display = 'none';
+        chatContainer.querySelector('.new-conversation').style.display = 'none';
+        chatInterface.classList.add('active');
+
+        // Show initial greeting if configured
+        if (config.branding.initialGreeting) {
+            const greetingDiv = document.createElement('div');
+            greetingDiv.className = 'chat-message bot';
+            greetingDiv.textContent = config.branding.initialGreeting;
+            messagesContainer.appendChild(greetingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
         const data = [{
             action: "loadPreviousSession",
             sessionId: currentSessionId,
@@ -416,17 +432,26 @@
             });
 
             const responseData = await response.json();
-            chatContainer.querySelector('.brand-header').style.display = 'none';
-            chatContainer.querySelector('.new-conversation').style.display = 'none';
-            chatInterface.classList.add('active');
-
-            const botMessageDiv = document.createElement('div');
-            botMessageDiv.className = 'chat-message bot';
-            botMessageDiv.textContent = Array.isArray(responseData) ? responseData[0].output : responseData.output;
-            messagesContainer.appendChild(botMessageDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            // Only show webhook response if it's different from greeting or if no greeting is set
+            const webhookMessage = Array.isArray(responseData) ? responseData[0].output : responseData.output;
+            if (!config.branding.initialGreeting || webhookMessage !== config.branding.initialGreeting) {
+                const botMessageDiv = document.createElement('div');
+                botMessageDiv.className = 'chat-message bot';
+                botMessageDiv.textContent = webhookMessage;
+                messagesContainer.appendChild(botMessageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
         } catch (error) {
             console.error('Error:', error);
+            // If webhook fails but we have a greeting, that's still fine
+            if (!config.branding.initialGreeting) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'chat-message bot';
+                errorDiv.textContent = 'Sorry, I encountered an error. Please try again.';
+                messagesContainer.appendChild(errorDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
         }
     }
 
