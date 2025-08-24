@@ -176,6 +176,27 @@
             align-self: flex-start;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         }
+        .n8n-chat-widget .chat-message.bot .message-text a {
+            color: var(--chat--color-primary);
+            text-decoration: underline;
+            word-break: break-all;
+        }
+        .n8n-chat-widget .chat-message.bot .links-preview {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(133, 79, 255, 0.15);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .n8n-chat-widget .chat-message.bot .links-preview a {
+            font-size: 12px;
+            color: var(--chat--color-primary);
+            text-decoration: underline;
+            background: rgba(133, 79, 255, 0.06);
+            padding: 4px 6px;
+            border-radius: 6px;
+        }
 
         .n8n-chat-widget .chat-input {
             padding: 16px;
@@ -396,6 +417,57 @@
         return crypto.randomUUID();
     }
 
+    // Safely convert plain text to HTML with clickable links (bot messages only)
+    function escapeHTML(unsafeText) {
+        const div = document.createElement('div');
+        div.textContent = unsafeText ?? '';
+        return div.innerHTML;
+    }
+
+    function linkifyAndExtractLinks(plainText) {
+        const escaped = escapeHTML(plainText);
+        const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+        const links = [];
+        const htmlWithLinks = escaped.replace(urlRegex, (match) => {
+            let href = match;
+            if (href.startsWith('www.')) {
+                href = `https://${href}`;
+            }
+            links.push(href);
+            return `<a href="${href}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+        }).replace(/\n/g, '<br>');
+        return { html: htmlWithLinks, links };
+    }
+
+    function appendBotMessage(messageText) {
+        if (!messageText || !messageText.trim()) return;
+        const { html, links } = linkifyAndExtractLinks(messageText);
+        const botMessageDiv = document.createElement('div');
+        botMessageDiv.className = 'chat-message bot';
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text';
+        textDiv.innerHTML = html;
+        botMessageDiv.appendChild(textDiv);
+
+        if (Array.isArray(links) && links.length > 0) {
+            const linksDiv = document.createElement('div');
+            linksDiv.className = 'links-preview';
+            links.forEach((href) => {
+                const a = document.createElement('a');
+                a.href = href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = href.replace(/^https?:\/\//, '');
+                linksDiv.appendChild(a);
+            });
+            botMessageDiv.appendChild(linksDiv);
+        }
+
+        messagesContainer.appendChild(botMessageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
     async function startNewConversation() {
         currentSessionId = generateUUID();
         
@@ -406,11 +478,7 @@
 
         // Show initial greeting if configured
         if (config.branding.initialGreeting && config.branding.initialGreeting.trim()) {
-            const greetingDiv = document.createElement('div');
-            greetingDiv.className = 'chat-message bot';
-            greetingDiv.textContent = config.branding.initialGreeting;
-            messagesContainer.appendChild(greetingDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            appendBotMessage(config.branding.initialGreeting);
         }
 
         const data = [{
@@ -436,11 +504,7 @@
             // Only show webhook response if it's different from greeting or if no greeting is set
             const webhookMessage = Array.isArray(responseData) ? responseData[0]?.output : responseData?.output;
             if (webhookMessage && webhookMessage.trim() && (!config.branding.initialGreeting || webhookMessage !== config.branding.initialGreeting)) {
-                const botMessageDiv = document.createElement('div');
-                botMessageDiv.className = 'chat-message bot';
-                botMessageDiv.textContent = webhookMessage;
-                messagesContainer.appendChild(botMessageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                appendBotMessage(webhookMessage);
             }
         } catch (error) {
             console.error('Error:', error);
@@ -485,11 +549,7 @@
             
             const botMessage = Array.isArray(data) ? data[0]?.output : data?.output;
             if (botMessage && botMessage.trim()) {
-                const botMessageDiv = document.createElement('div');
-                botMessageDiv.className = 'chat-message bot';
-                botMessageDiv.textContent = botMessage;
-                messagesContainer.appendChild(botMessageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                appendBotMessage(botMessage);
             }
         } catch (error) {
             console.error('Error:', error);
