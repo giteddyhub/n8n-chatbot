@@ -435,7 +435,65 @@
         return div.innerHTML;
     }
 
+    function looksLikeHtml(text) {
+        return /<\s*[a-zA-Z][\s\S]*>/.test(text || '');
+    }
+
+    function sanitizeHtmlAndCollectLinks(unsafeHtml) {
+        const allowedTags = new Set(['a','strong','em','b','i','u','p','br','ul','ol','li']);
+        const container = document.createElement('div');
+        container.innerHTML = unsafeHtml || '';
+        const links = [];
+
+        const isHttpUrl = (href) => /^https?:\/\//i.test(href || '');
+
+        const walk = (node) => {
+            // Remove script/style and comment nodes
+            if (node.nodeType === Node.COMMENT_NODE) {
+                node.parentNode && node.parentNode.removeChild(node);
+                return;
+            }
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node;
+                const tag = el.tagName.toLowerCase();
+                if (!allowedTags.has(tag)) {
+                    // Replace unknown element with its text content
+                    const text = document.createTextNode(el.textContent || '');
+                    el.parentNode && el.parentNode.replaceChild(text, el);
+                    return;
+                }
+                // Sanitize anchors
+                if (tag === 'a') {
+                    const href = el.getAttribute('href') || '';
+                    if (!isHttpUrl(href)) {
+                        // drop unsafe hrefs
+                        el.removeAttribute('href');
+                    } else {
+                        links.push(href);
+                        el.setAttribute('target','_blank');
+                        el.setAttribute('rel','noopener noreferrer');
+                    }
+                    // remove any inline handlers
+                    [...el.attributes].forEach(attr => {
+                        if (attr.name.startsWith('on')) el.removeAttribute(attr.name);
+                    });
+                }
+                // Recurse children; convert <br> to allowed as-is
+                const children = Array.from(el.childNodes);
+                children.forEach(walk);
+                return;
+            }
+            // text nodes: no-op
+        };
+        Array.from(container.childNodes).forEach(walk);
+        return { html: container.innerHTML, links };
+    }
+
     function linkifyAndExtractLinks(plainText) {
+        // If HTML is provided by n8n, sanitize and use it directly
+        if (looksLikeHtml(plainText)) {
+            return sanitizeHtmlAndCollectLinks(plainText);
+        }
         const links = [];
         const sanitizeUrl = (raw) => {
             if (!raw) return null;
@@ -475,7 +533,25 @@
         };
 
         // Build simple paragraphs and lists from markdown-like text
-        const lines = (plainText || '').replace(/\r\n/g, '\n').split('\n');
+        const normalized = (plainText || '').replace(/\r\n/g, '\n');
+        // Heuristic: inline bullets separated by " - " in a single line
+        if (!/\n/.test(normalized) && /\s-\s/.test(normalized)) {
+            const parts = normalized.split(/\s-\s/);
+            const intro = parts.shift();
+            const htmlPartsInline = [];
+            if (intro && intro.trim()) htmlPartsInline.push(`<p>${processInline(intro.trim())}</p>`);
+            if (parts.length) {
+                htmlPartsInline.push('<ul>');
+                parts.forEach(item => {
+                    const t = item.trim();
+                    if (t) htmlPartsInline.push(`<li>${processInline(t)}</li>`);
+                });
+                htmlPartsInline.push('</ul>');
+            }
+            return { html: htmlPartsInline.join(''), links };
+        }
+
+        const lines = normalized.split('\n');
         let htmlParts = [];
         let listType = null; // 'ul' | 'ol' | null
         let paragraphBuffer = [];
