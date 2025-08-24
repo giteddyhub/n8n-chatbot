@@ -507,6 +507,14 @@
             // escape first
             let out = escapeHTML(text);
 
+            // markdown emphasis: strong then em (avoid interfering with strong)
+            // **bold** or __bold__
+            out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            out = out.replace(/__(.+?)__/g, '<strong>$1</strong>');
+            // *italic* or _italic_
+            out = out.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+            out = out.replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<em>$2</em>');
+
             // markdown links [text](url)
             const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|www\.[^\s)]+)\)/gi;
             out = out.replace(mdLink, (_, label, url) => {
