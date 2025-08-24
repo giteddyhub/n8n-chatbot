@@ -446,6 +446,13 @@
         const links = [];
 
         const isHttpUrl = (href) => /^https?:\/\//i.test(href || '');
+        const normalizeUrl = (raw) => {
+            if (!raw) return null;
+            let href = String(raw).trim();
+            if (href.startsWith('www.')) href = `https://${href}`;
+            if (!isHttpUrl(href)) return null;
+            return href;
+        };
 
         const walk = (node) => {
             // Remove script/style and comment nodes
@@ -486,6 +493,39 @@
             // text nodes: no-op
         };
         Array.from(container.childNodes).forEach(walk);
+
+        // Second pass: linkify bare URLs inside text nodes
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+        const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+        const textNodes = [];
+        let n; while ((n = walker.nextNode())) textNodes.push(n);
+        textNodes.forEach((textNode) => {
+            const text = textNode.nodeValue || '';
+            if (!urlRegex.test(text)) return;
+            urlRegex.lastIndex = 0;
+            const frag = document.createDocumentFragment();
+            let lastIndex = 0; let match;
+            while ((match = urlRegex.exec(text))) {
+                const [raw] = match;
+                const before = text.slice(lastIndex, match.index);
+                if (before) frag.appendChild(document.createTextNode(before));
+                const safe = normalizeUrl(raw);
+                if (safe) {
+                    const a = document.createElement('a');
+                    a.href = safe; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                    a.textContent = raw;
+                    frag.appendChild(a);
+                    links.push(safe);
+                } else {
+                    frag.appendChild(document.createTextNode(raw));
+                }
+                lastIndex = match.index + raw.length;
+            }
+            const after = text.slice(lastIndex);
+            if (after) frag.appendChild(document.createTextNode(after));
+            textNode.parentNode && textNode.parentNode.replaceChild(frag, textNode);
+        });
+
         return { html: container.innerHTML, links };
     }
 
