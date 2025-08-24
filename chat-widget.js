@@ -476,9 +476,14 @@
         chatContainer.querySelector('.new-conversation').style.display = 'none';
         chatInterface.classList.add('active');
 
-        // Show initial greeting if configured
-        if (config.branding.initialGreeting && config.branding.initialGreeting.trim()) {
-            appendBotMessage(config.branding.initialGreeting);
+        // Show initial greeting if configured (fallback to welcomeText)
+        const greetingMessage = (config.branding.initialGreeting && config.branding.initialGreeting.trim())
+            ? config.branding.initialGreeting
+            : (config.branding.welcomeText && config.branding.welcomeText.trim())
+                ? config.branding.welcomeText
+                : '';
+        if (greetingMessage) {
+            appendBotMessage(greetingMessage);
         }
 
         const data = [{
@@ -503,7 +508,7 @@
             
             // Only show webhook response if it's different from greeting or if no greeting is set
             const webhookMessage = Array.isArray(responseData) ? responseData[0]?.output : responseData?.output;
-            if (webhookMessage && webhookMessage.trim() && (!config.branding.initialGreeting || webhookMessage !== config.branding.initialGreeting)) {
+            if (webhookMessage && webhookMessage.trim() && (!greetingMessage || webhookMessage !== greetingMessage)) {
                 appendBotMessage(webhookMessage);
             }
         } catch (error) {
