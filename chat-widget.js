@@ -672,9 +672,11 @@
 
         for (const rawLine of lines) {
             const line = rawLine.trim();
-            if (!line) { // blank line
-                closeList();
-                flushParagraph();
+            if (!line) {
+                // Blank line: do not close an active list. Just separate paragraphs if not in a list
+                if (!listType) {
+                    flushParagraph();
+                }
                 continue;
             }
 
