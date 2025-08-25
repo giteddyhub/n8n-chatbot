@@ -514,36 +514,56 @@
         };
         Array.from(container.childNodes).forEach(walk);
 
-        // Second pass: linkify bare URLs inside text nodes
+        // Second pass: convert markdown emphasis in text nodes, then linkify bare URLs
         const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
         const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
         const textNodes = [];
         let n; while ((n = walker.nextNode())) textNodes.push(n);
         textNodes.forEach((textNode) => {
-            const text = textNode.nodeValue || '';
-            if (!urlRegex.test(text)) return;
-            urlRegex.lastIndex = 0;
-            const frag = document.createDocumentFragment();
-            let lastIndex = 0; let match;
-            while ((match = urlRegex.exec(text))) {
-                const [raw] = match;
-                const before = text.slice(lastIndex, match.index);
-                if (before) frag.appendChild(document.createTextNode(before));
-                const safe = normalizeUrl(raw);
-                if (safe) {
-                    const a = document.createElement('a');
-                    a.href = safe; a.target = '_blank'; a.rel = 'noopener noreferrer';
-                    a.textContent = raw;
-                    frag.appendChild(a);
-                    links.push(safe);
-                } else {
-                    frag.appendChild(document.createTextNode(raw));
+            const original = textNode.nodeValue || '';
+            // Step 1: apply emphasis to the text node by generating small HTML
+            let emphasizedHtml = escapeHTML(original)
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/__(.+?)__/g, '<strong>$1</strong>')
+                .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>')
+                .replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<em>$2</em>');
+
+            const temp = document.createElement('span');
+            temp.innerHTML = emphasizedHtml;
+
+            // Step 2: within this span, linkify bare URLs while preserving the emphasis elements
+            const innerWalker = document.createTreeWalker(temp, NodeFilter.SHOW_TEXT, null);
+            const innerTextNodes = [];
+            let t; while ((t = innerWalker.nextNode())) innerTextNodes.push(t);
+            innerTextNodes.forEach((tn) => {
+                const text = tn.nodeValue || '';
+                if (!urlRegex.test(text)) return; urlRegex.lastIndex = 0;
+                const frag = document.createDocumentFragment();
+                let lastIndex = 0; let m;
+                while ((m = urlRegex.exec(text))) {
+                    const [raw] = m;
+                    const before = text.slice(lastIndex, m.index);
+                    if (before) frag.appendChild(document.createTextNode(before));
+                    const safe = normalizeUrl(raw);
+                    if (safe) {
+                        const a = document.createElement('a');
+                        a.href = safe; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                        a.textContent = raw; links.push(safe);
+                        frag.appendChild(a);
+                    } else {
+                        frag.appendChild(document.createTextNode(raw));
+                    }
+                    lastIndex = m.index + raw.length;
                 }
-                lastIndex = match.index + raw.length;
-            }
-            const after = text.slice(lastIndex);
-            if (after) frag.appendChild(document.createTextNode(after));
-            textNode.parentNode && textNode.parentNode.replaceChild(frag, textNode);
+                const after = text.slice(lastIndex);
+                if (after) frag.appendChild(document.createTextNode(after));
+                tn.parentNode && tn.parentNode.replaceChild(frag, tn);
+            });
+
+            // Replace original text node with the processed fragment
+            const replacementFrag = document.createDocumentFragment();
+            Array.from(temp.childNodes).forEach((child) => replacementFrag.appendChild(child));
+            textNode.parentNode && textNode.parentNode.replaceChild(replacementFrag, textNode);
         });
 
         return { html: container.innerHTML, links };
