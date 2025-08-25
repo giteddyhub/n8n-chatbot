@@ -197,6 +197,26 @@
             padding: 4px 6px;
             border-radius: 6px;
         }
+        /* Typing indicator styles */
+        .n8n-chat-widget .chat-message.bot.typing {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .n8n-chat-widget .chat-message.bot.typing .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--chat--color-font);
+            opacity: 0.4;
+            animation: n8nChatTyping 1.2s infinite ease-in-out;
+        }
+        .n8n-chat-widget .chat-message.bot.typing .dot:nth-child(2) { animation-delay: 0.2s; }
+        .n8n-chat-widget .chat-message.bot.typing .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes n8nChatTyping {
+            0%, 80%, 100% { transform: scale(0.7); opacity: 0.3; }
+            40% { transform: scale(1); opacity: 0.8; }
+        }
         .n8n-chat-widget .chat-message.bot .message-text ul,
         .n8n-chat-widget .chat-message.bot .message-text ol {
             margin: 8px 0;
@@ -682,6 +702,20 @@
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
+    function showTypingIndicator() {
+        const typing = document.createElement('div');
+        typing.className = 'chat-message bot typing';
+        typing.setAttribute('data-typing', 'true');
+        typing.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+        messagesContainer.appendChild(typing);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        return typing;
+    }
+
+    function hideTypingIndicator(typingEl) {
+        if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+    }
+
     async function startNewConversation() {
         currentSessionId = generateUUID();
         
@@ -710,6 +744,7 @@
         }];
 
         try {
+            const typingEl = showTypingIndicator();
             const response = await fetch(config.webhook.url, {
                 method: 'POST',
                 headers: {
@@ -719,6 +754,7 @@
             });
 
             const responseData = await response.json();
+            hideTypingIndicator(typingEl);
             
             // Only show webhook response if it's different from greeting or if no greeting is set
             const webhookMessage = Array.isArray(responseData) ? responseData[0]?.output : responseData?.output;
@@ -727,6 +763,9 @@
             }
         } catch (error) {
             console.error('Error:', error);
+            // Remove typing if present on error
+            const t = chatContainer.querySelector('.chat-message.bot.typing[data-typing="true"]');
+            if (t) hideTypingIndicator(t);
             // If webhook fails but we have a greeting, that's still fine
             if (!config.branding.initialGreeting) {
                 const errorDiv = document.createElement('div');
@@ -756,6 +795,7 @@
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
         try {
+            const typingEl = showTypingIndicator();
             const response = await fetch(config.webhook.url, {
                 method: 'POST',
                 headers: {
@@ -765,6 +805,7 @@
             });
             
             const data = await response.json();
+            hideTypingIndicator(typingEl);
             
             const botMessage = Array.isArray(data) ? data[0]?.output : data?.output;
             if (botMessage && botMessage.trim()) {
@@ -772,6 +813,8 @@
             }
         } catch (error) {
             console.error('Error:', error);
+            const t = chatContainer.querySelector('.chat-message.bot.typing[data-typing="true"]');
+            if (t) hideTypingIndicator(t);
         }
     }
 
