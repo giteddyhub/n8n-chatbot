@@ -587,13 +587,14 @@
             // escape first
             let out = escapeHTML(text);
 
-            // markdown emphasis: strong then em (avoid interfering with strong)
-            // **bold** or __bold__
-            out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            out = out.replace(/__(.+?)__/g, '<strong>$1</strong>');
-            // *italic* or _italic_
-            out = out.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-            out = out.replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<em>$2</em>');
+            // markdown emphasis:
+            // handle nested emphasis safely using non-greedy, avoid matching across spaces-only
+            // strong first, then em
+            out = out.replace(/\*\*([^*][\s\S]*?)\*\*/g, '<strong>$1</strong>');
+            out = out.replace(/__([^_][\s\S]*?)__/g, '<strong>$1</strong>');
+            // italics; avoid double-asterisk sequences and underscores part of words
+            out = out.replace(/(?<!\*)\*([^*][\s\S]*?)\*(?!\*)/g, '<em>$1</em>');
+            out = out.replace(/(?<!_)_([^_][\s\S]*?)_(?!_)/g, '<em>$1</em>');
 
             // markdown links [text](url)
             const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|www\.[^\s)]+)\)/gi;
@@ -621,7 +622,10 @@
         };
 
         // Build simple paragraphs and lists from markdown-like text
-        const normalized = (plainText || '').replace(/\r\n/g, '\n');
+        // Normalize newlines. Some sources send literal "\n" sequences – convert them to real newlines.
+        const normalized = (plainText || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\\n/g, '\n');
         // Heuristic: inline bullets separated by " - " in a single line
         if (!/\n/.test(normalized) && /\s-\s/.test(normalized)) {
             const parts = normalized.split(/\s-\s/);
@@ -674,7 +678,15 @@
                 continue;
             }
 
-            const ulMatch = /^[-*]\s+(.+)$/.exec(line);
+            // Headings like "### Title" → paragraph with strong
+            const headingMatch = /^#{1,6}\s+(.+)$/.exec(line);
+            if (headingMatch) {
+                closeList();
+                htmlParts.push(`<p><strong>${processInline(headingMatch[1])}</strong></p>`);
+                continue;
+            }
+
+            const ulMatch = /^(?:[-*]|•)\s+(.+)$/.exec(line);
             const olMatch = /^(\d+)\.\s+(.+)$/.exec(line);
             if (ulMatch) {
                 openList('ul');
